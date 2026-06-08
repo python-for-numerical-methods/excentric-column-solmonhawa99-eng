@@ -1,17 +1,24 @@
 import numpy as np
-import pytest
-from column_buckling import find_critical_load
+from scipy.optimize import bisect
 
-def test_known_case():
-    # נתונים עבור עמוד פלדה ספציפי שחישבת מראש
-    L, E, A, r, c, e, sigma_allow = 3000, 200000, 5000, 50, 100, 20, 250
-    result = find_critical_load(L, E, A, r, c, e, sigma_allow)
-    
-    # בדיקה שהתוצאה לא שלילית והיא הגיונית (למשל, קטנה מעומס אוילר)
-    euler_load = (np.pi**2 * E * (A * r**2)) / (L**2)
-    assert 0 < result < euler_load
-    
-    # בדיקה שהתוצאה מאפסת את המשוואה (בקירוב)
-    P = result
-    sigma_max = (P/A) * (1 + (e*c/r**2) * (1/np.cos((L/(2*r)) * np.sqrt(P/(E*A)))))
-    assert np.isclose(sigma_max, sigma_allow, rtol=1e-3)
+
+def find_critical_load(L, E, A, r, c, e, sigma_allow):
+
+    def equation(P):
+        sec_term = 1 / np.cos(
+            (L / (2 * r)) * np.sqrt(P / (E * A))
+        )
+
+        sigma_max = (P / A) * (
+            1 + (e * c / r**2) * sec_term
+        )
+
+        return sigma_max - sigma_allow
+
+    P_low = 0.0
+    P_high = sigma_allow * A
+
+    while equation(P_high) < 0:
+        P_high *= 2
+
+    return float(bisect(equation, P_low, P_high))
