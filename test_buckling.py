@@ -4,32 +4,50 @@ from scipy.optimize import bisect
 def find_critical_load(L, E, A, r, c, e, sigma_allow):
     """
     מחשב את העומס המקסימלי המותר (P) על עמוד אקסצנטרי לפי נוסחת הסקנט.
+    
+    פרמטרים (לפי הגדרות המטלה):
+    L (float): אורך העמוד במ"מ
+    E (float): מודול האלסטיות ב-MPa
+    A (float): שטח חתך בממ"ר
+    r (float): רדיוס אינרציה בס"מ (מ"ס) -> יומר למ"מ
+    c (float): מרחק לציר הנייטרלי לסיב הקיצוני בס"מ (מ"ס) -> יומר למ"מ
+    e (float): אקסצנטריות בס"מ (מ"ס) -> יומר למ"מ
+    sigma_allow (float): מאמץ מותר ב-MPa
+    
+    החזרה:
+    float: העומס הקריטי P בניוטון
     """
     
-    # הגדרת פונקציית העזר שחריגתה מאפס מייצגת את הפתרון [cite: 43, 45]
+    # המרת יחידות מס"מ (מ"ס) למילימטרים (מ"מ) עבור הנוסחה
+    r_mm = r * 10.0
+    c_mm = c * 10.0
+    e_mm = e * 10.0
+    
+    # הגדרת פונקציית העזר: f(P) = sigma_max(P) - sigma_allow
     def f(P):
-        # חישוב הארגומנט בתוך ה-cos ברדיאנים [cite: 42, 43]
-        # הערה: הנוסחה משתמשת ב-P כמשתנה תחת השורש
-        term_inside_cos = (L / (2 * r)) * np.sqrt(P / (E * A))
+        # חישוב הארגומנט שבתוך ה-cos (ברדיאנים)
+        term_inside_cos = (L / (2 * r_mm)) * np.sqrt(P / (E * A))
         
-        # חישוב המאמץ המקסימלי לפי נוסחת הסקנט [cite: 14]
-        # sec(x) = 1 / cos(x) [cite: 42]
-        sigma_max = (P / A) * (1 + (e * c / r**2) * (1 / np.cos(term_inside_cos)))
+        # הגנה מפני חלוקה באפס או ערכים לא חוקיים ב-cos
+        if term_inside_cos >= np.pi / 2:
+            return float('inf')
+            
+        # נוסחת הסקנט (sec(x) = 1 / cos(x))
+        sigma_max = (P / A) * (1 + (e_mm * c_mm / r_mm**2) * (1 / np.cos(term_inside_cos)))
         
-        # f(P) = sigma_max(P) - sigma_allowable 
         return sigma_max - sigma_allow
 
-    # הגדרת טווח חיפוש נומרי בטוח עבור שיטת החצייה (Bisection) [cite: 39]
-    # גבול תחתון: קרוב מאוד ל-0
-    p_min = 1e-5
+    # הגדרת טווח החיפוש (brackets) עבור שיטת החצייה
+    p_min = 1e-5 
     
-    # גבול עליון: חסם עליון תיאורטי (עומס אוילר)
-    p_euler = (np.pi**2 * E * A * r**2) / L**2
+    # חסם עליון מוחלט: עומס אוילר התיאורטי (במילימטרים)
+    p_euler = (np.pi**2 * E * A * r_mm**2) / L**2
     
-    # כדי למנוע מצב שבו הקוסינוס מתאפס (בדיוק באוילר), ניקח 99% מעומס אוילר כגבול עליון
+    # העומס האמיתי תמיד יהיה קטן מעומס אוילר בגלל האקסצנטריות.
+    # נשתמש ב-99% מעומס אוילר כנקודת קצה עליונה בטוחה לחיפוש.
     p_max = p_euler * 0.99
-
-    # הרצת שיטת החצייה לקבלת השורש המדויק [cite: 39]
-    critical_load = bisect(f, p_min, p_max, xtol=1e-6)
+    
+    # הרצת שיטת החצייה למציאת השורש
+    critical_load = bisect(f, p_min, p_max, xtol=1e-5)
     
     return float(critical_load)
