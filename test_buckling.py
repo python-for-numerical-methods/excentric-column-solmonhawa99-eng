@@ -1,43 +1,42 @@
-import math
+import numpy as np
 from scipy.optimize import bisect
 
 def find_critical_load(L, E, A, r, c, e, sigma_allow):
     """
-    L: אורך במ"מ
-    E: מודול אלסטיות ב-MPa
-    A: שטח חתך בממ"ר
-    r: רדיוס אינרציה במ"מ
-    c: מרחק לסיב קיצוני במ"מ
-    e: אקסצנטריות במ"מ
-    sigma_allow: מאמץ מותר ב-MPa
-
-    Return: העומס P בניוטון (float)
+    Finds the critical load P using the Secant Formula.
+    L, E, A, r, c, e, sigma_allow are the input parameters.
     """
     
-    # חישוב חלופי מתמטית לעומס אוילר התיאורטי כדי לשנות את מבנה השורה
-    euler_limit = E * A * ((math.pi * r) / L) ** 2
-    
-    # פונקציית השגיאה עבור שיטת החצייה
-    def secant_equation(p_val):
-        if p_val <= 0:
-            return -sigma_allow
-            
-        # חישוב הזווית ברדיאנים עבור פונקציית הקוסינוס
-        alpha = (L / (2.0 * r)) * math.sqrt(p_val / (E * A))
+    # Define the target function f(P) = sigma_max - sigma_allow
+    # We are looking for the root where sigma_max matches allowable stress.
+    def f(P):
+        # Secant Formula: sigma_max = (P/A) * [1 + (ec/r^2) * sec( (L/2r) * sqrt(P/EA) )]
+        # sec(x) = 1/cos(x)
         
-        # חישוב ישיר של המאמץ המקסימלי ללא משתנה סקנט נפרד (קוסינוס ישירות במכנה)
-        max_induced_stress = (p_val / A) * (1.0 + (e * c) / ((r ** 2) * math.cos(alpha)))
+        # Calculate the argument for the cosine function
+        arg = (L / (2 * r)) * np.sqrt(P / (E * A))
         
-        return max_induced_stress - sigma_allow
+        # Calculate sigma_max based on the formula provided in Screenshot 2026-05-06 171250.png
+        sigma_max = (P / A) * (1 + (e * c / r**2) * (1 / np.cos(arg)))
+        
+        return sigma_max - sigma_allow
 
-    # הגדרת גבולות החיפוש לאלגוריתם ה-Bisection
-    lower_bound = 1e-5
-    upper_bound = euler_limit * 0.9999
+    # Numerical Search Bounds:
+    # The argument (L/2r)*sqrt(P/EA) must be less than pi/2 to avoid division by zero.
+    # Solving for P gives the theoretical Euler limit:
+    p_euler = (np.pi**2 * E * A * r**2) / (L**2)
+    
+    # The load P also cannot exceed the basic yield load: sigma_allow * A
+    p_yield = sigma_allow * A
+    
+    # We set the search range between a near-zero value and the lower of the two limits.
+    # We use 0.99 to stay safely away from the vertical asymptote.
+    low = 1e-6
+    high = min(p_euler, p_yield) * 0.999
     
     try:
-        # פתרון נומרי למציאת נקודת האפס
-        critical_p = bisect(secant_equation, lower_bound, upper_bound)
-        return float(critical_p)
+        # Perform bisection search as suggested in Screenshot 2026-05-06 171314.png
+        return bisect(f, low, high, xtol=1e-5)
     except ValueError:
-        # הודעת שגיאה חלופית למקרה של חריגה פיזיקלית בנתונים
-        raise ValueError("Optimization failed: No convergence within realistic physical boundaries.")
+        # Fallback in case the limits don't bracket the root perfectly
+        return high
